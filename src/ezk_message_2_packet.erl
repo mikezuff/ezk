@@ -30,10 +30,18 @@
 %% This function gets a command and the associated data plus the actual Iteration
 %% and constructs a corresponding Binary which is used to signal the command to the server.
 %% The command is translated to the command id and the payload for the packet is computed.
-%% Then the function wrap_packet wraps this all up neatly.
 %% Returns {ok, CommandId, Path, PacketBinary}
+make_packet(Args, Iteration) ->
+    {Command, Path, Load} = make_packet(Args),
+    ?LOG(3, "message_2_packet: Try send a request {command, Path, Load}: ~w",
+         [{Command, Path, Load}]),
+    Packet = [[<<Iteration:32, Command:32>>], Load],
+    ?LOG(3, "message_2_packet: Request send"),
+    {ok, Command, Path, Packet}.
+
+
 %% create
-make_packet({create, Path, Data, Typ, Acls}, Iteration) ->
+make_packet({create, Path, Data, Typ, Acls}) ->
     %% e = epheremal , s = sequenced
     case Typ of
         e -> Mode = 1;
@@ -49,46 +57,46 @@ make_packet({create, Path, Data, Typ, Acls}, Iteration) ->
          AclBin/binary,
          Mode:32>>,
     Command = 1,
-    wrap_packet({Command, Path, Load}, Iteration);
+    {Command, Path, Load};
 %%delete
-make_packet({delete, Path, _Typ}, Iteration ) ->
+make_packet({delete, Path, _Typ}) ->
     Load = <<(pack_it_l2b(Path))/binary, 255, 255, 255, 255 >>,
     Command = 2,
-    wrap_packet({Command, Path, Load}, Iteration);
+    {Command, Path, Load};
 %exists
-make_packet({exists, Path}, Iteration) ->
+make_packet({exists, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 0:8 >>,
     Command = 3,
-    wrap_packet({Command, Path, Load}, Iteration);
-make_packet({existsw, Path}, Iteration) ->
+    {Command, Path, Load};
+make_packet({existsw, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 1:8 >>,
     Command = 3,
-    wrap_packet({Command, Path, Load}, Iteration);
+    {Command, Path, Load};
 
 %% get
-make_packet({get, Path}, Iteration) ->
+make_packet({get, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 0:8>>,
     Command = 4,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% getw (the last Bit in the load is 1 if there should be a watch)
-make_packet({getw, Path}, Iteration) ->
+make_packet({getw, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 1:8>>,
     Command = 4,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% set
-make_packet({set, Path, Data}, Iteration) ->
+make_packet({set, Path, Data}) ->
     Load = <<(pack_it_l2b(Path))/binary,
          (pack_it_b2b(Data))/binary,
          255, 255, 255, 255>>,
     Command = 5,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% get acl
-make_packet({get_acl, Path}, Iteration) ->
+make_packet({get_acl, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary>>,
     Command = 6,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% set acl
-make_packet({set_acl, Path, Acls}, Iteration) ->
+make_packet({set_acl, Path, Acls}) ->
     ?LOG(3,"m2p: trying to set an acl, starting to build package"),
     AclBin = acls_2_bin(Acls,<<>>,0),
     ?LOG(3,"m2p: trying to set an acl, AclBin constructed"),
@@ -97,33 +105,43 @@ make_packet({set_acl, Path, Acls}, Iteration) ->
          255, 255, 255, 255>>,
     Command = 7,
     ?LOG(3,"m2p: trying to set an acl, Load constructed"),
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% ls
-make_packet({ls, Path}, Iteration) ->
+make_packet({ls, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 0:8>>,
     Command = 8,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% ls with a watch
-make_packet({lsw, Path}, Iteration) ->
+make_packet({lsw, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 1:8>>,
     Command = 8,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% sync
-make_packet({sync, Path}, Iteration) ->
+make_packet({sync, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary>>,
     Command = 9,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% ls2
-make_packet({ls2, Path}, Iteration) ->
+make_packet({ls2, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 0:8>>,
     Command = 12,
-    wrap_packet({Command, Path, Load}, Iteration );
+    {Command, Path, Load};
 %% ls2 with watch
-make_packet({ls2w, Path}, Iteration) ->
+make_packet({ls2w, Path}) ->
     Load = <<(pack_it_l2b(Path))/binary, 1:8>>,
     Command = 12,
-    wrap_packet({Command, Path, Load}, Iteration ).
-
+    {Command, Path, Load};
+%% multi allows create, delete, set
+%% Commands are in reverse order.
+make_packet({multi, Ops}) ->
+    F =
+        fun(Op, MultiLoad) ->
+            {Command, _Path, Load} = make_packet(Op),
+            [[make_multi_header(Command, false) | Load] | MultiLoad]
+        end,
+    Load = lists:foldl(F, make_multi_header(-1, true), Ops),
+    Command = 14,
+    {Command, <<"multiCmd">>, Load}.
 
 %% addauth (special case, because iteration is not used, so the standard
 %% way to build a packet has to be altered.
@@ -140,6 +158,14 @@ make_quit_message(Iteration) ->
 %Little Helpers (internal functions)
 %--------------------------------------------------------------------
 
+make_multi_header(Command, Done) ->
+    {D, Err} =
+        case Done of
+            true -> {1, -1};
+            false -> {0, 0}
+        end,
+    <<Command:32, D:8, Err:32>>.
+
 %% gets a list, determines the length and then puts both together as a binary.
 pack_it_l2b(List) ->
     Length = iolist_size(List),
@@ -148,17 +174,6 @@ pack_it_l2b(List) ->
 pack_it_b2b(Bin) ->
     Length = size(Bin),
     <<Length:32, Bin/binary>>.
-
-%% Gets the command id, the path, the load and the actual iteration and forms a
-%% zookeeper packet from all of them but the path. Instead the Path is passed on
-%% to the ezk_server.
-%% Returns {ok, CommandId, Path, PacketBinary}
-wrap_packet({Command, Path, Load}, Iteration) ->
-    ?LOG(3, "message_2_packet: Try send a request {command, Path, Load}: ~w",
-         [{Command, Path, Load}]),
-    Packet = <<Iteration:32, Command:32, Load/binary>>,
-    ?LOG(3, "message_2_packet: Request send"),
-    {ok, Command, Path, Packet}.
 
 %% Gets a List of Acl and returns a binary representation of them.
 %% To call this function use acls_2_bin(ListOfAcls, <<>>, 0).

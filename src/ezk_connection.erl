@@ -56,6 +56,7 @@
 -export([  get/2,   get_acl/2,   ls2/2,   ls/2]).
 -export([n_get/4, n_get_acl/4, n_ls2/4, n_ls/4]).
 -export([sync/2]).
+-export([multi/2]).
 %functions dealing with watches
 -export([ls/4, get/4, ls2/4]).
 %macros
@@ -101,33 +102,40 @@ addauth(ConnectionPId, Scheme, Auth) when is_pid(ConnectionPId) ->
 
 %% Creates a new ZK_Node
 %% Reply = Path where Path = String
+create({multi, ConnectionPId, Ops}, Path, Data) when is_pid(ConnectionPId) ->
+    {multi, ConnectionPId, [msg_create(Path, Data) | Ops]};
 create(ConnectionPId, Path, Data) when is_pid(ConnectionPId) ->
-    call_and_catch(ConnectionPId, {command, {create, Path, Data, [], [undef]}}).
+    call_and_catch(ConnectionPId, {command, msg_create(Path, Data)}).
 n_create(ConnectionPId, Path, Data, Receiver, Tag) when is_pid(ConnectionPId) ->
-    gen_server:cast(ConnectionPId, {nbcommand, {create, Path, Data, [], [undef]},
-                                    Receiver, Tag}).
+    gen_server:cast(ConnectionPId, {nbcommand,
+        msg_create(Path, Data), Receiver, Tag}).
 %% Typ = e | s | es (stands for etheremal, sequenzed or both)
+create({multi, ConnectionPId, Ops}, Path, Data, Typ) when is_pid(ConnectionPId) ->
+    {multi, ConnectionPId, [msg_create(Path, Data, Typ) | Ops]};
 create(ConnectionPId, Path, Data, Typ) when is_pid(ConnectionPId) ->
-    call_and_catch(ConnectionPId, {command, {create, Path, Data, Typ, [undef]}}).
-n_create(ConnectionPId, Path, Data, Typ, Receiver, Tag)
-  when is_pid(ConnectionPId) ->
-    gen_server:cast(ConnectionPId, {nbcommand, {create, Path, Data, Typ, [undef]},
-                                    Receiver, Tag}).
+    call_and_catch(ConnectionPId, {command, msg_create(Path, Data, Typ)}).
+n_create(ConnectionPId, Path, Data, Typ, Receiver, Tag) when is_pid(ConnectionPId) ->
+    gen_server:cast(ConnectionPId, {nbcommand,
+        msg_create(Path, Data, Typ), Receiver, Tag}).
 
 %% Acls = [Acl] where Acl = {Permissions, Scheme, Id}
 %% with Scheme and Id = String
 %% and Permission = [Per] | String
 %% where Per = r | w | c | d | a
+create({multi, ConnectionPId, Ops}, Path, Data, Typ, Acls) when is_pid(ConnectionPId) ->
+    {multi, ConnectionPId, [msg_create(Path, Data, Typ, Acls) | Ops]};
 create(ConnectionPId, Path, Data, Typ, Acls) when is_pid(ConnectionPId) ->
-    call_and_catch(ConnectionPId, {command, {create, Path, Data, Typ, Acls}}).
+    call_and_catch(ConnectionPId, {command, msg_create(Path, Data, Typ, Acls)}).
 n_create(ConnectionPId, Path, Data, Typ, Acls, Receiver, Tag)
   when is_pid(ConnectionPId) ->
-    gen_server:cast(ConnectionPId, {nbcommand, {create, Path, Data, Typ, Acls},
+    gen_server:cast(ConnectionPId, {nbcommand, msg_create(Path, Data, Typ, Acls),
                                     Receiver, Tag}).
 
 %% Deletes a ZK_Node
 %% Only working if Node has no children.
 %% Reply = Path where Path = String
+delete({multi, ConnectionPId, Ops}, Path) when is_pid(ConnectionPId) ->
+    {multi, ConnectionPId, [{delete, Path, []} | Ops]};
 delete(ConnectionPId, Path) when is_pid(ConnectionPId) ->
     call_and_catch(ConnectionPId, {command, {delete,  Path, []}}).
 n_delete(ConnectionPId, Path, Receiver, Tag) when is_pid(ConnectionPId) ->
@@ -207,6 +215,8 @@ n_get_acl(ConnectionPId, Path, Receiver, Tag) when is_pid(ConnectionPId) ->
 %% Sets new Data in a Node. Old ones are lost.
 %% Dataformat is Binary.
 %% Reply = Parameters with Data like at get
+set({multi, ConnectionPId, Ops}, Path, Data) when is_pid(ConnectionPId) ->
+    {multi, ConnectionPId, [{set, Path, Data} | Ops]};
 set(ConnectionPId, Path, Data) when is_pid(ConnectionPId) ->
     call_and_catch(ConnectionPId, {command, {set, Path, Data}}).
 n_set(ConnectionPId, Path, Data, Receiver, Tag) when is_pid(ConnectionPId) ->
@@ -252,6 +262,10 @@ ls2(ConnectionPId, Path, WatchOwner, WatchMessage) when is_pid(ConnectionPId) ->
 sync(ConnectionPId, Path) when is_pid(ConnectionPId) ->
     call_and_catch(ConnectionPId, {command, {sync, Path}}).
 
+%% Commit multiple commands.
+multi(ConnectionPId, Ops) when is_pid(ConnectionPId) ->
+    call_and_catch(ConnectionPId, {command, {multi, Ops}}).
+
 %% Returns the Actual Transaction Id of the Client.
 %% Reply = Iteration = Int.
 info_get_iterations(ConnectionPId) when is_pid(ConnectionPId) ->
@@ -266,6 +280,10 @@ ensure_path(ConnectionPId, Path) when is_pid(ConnectionPId) ->
     ls(ConnectionPId, Path).
 
 %% ----------- intern functions------------------------------------
+
+msg_create(Path, Data) -> msg_create(Path, Data, [], [undef]).
+msg_create(Path, Data, Typ) -> msg_create(Path, Data, Typ, [undef]).
+msg_create(Path, Data, Typ, Acls) -> {create, Path, Data, Typ, Acls}.
 
 %% Determines the path to every Node on the way to a special node (all parents).
 get_prefix_paths([]) ->

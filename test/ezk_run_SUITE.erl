@@ -65,8 +65,7 @@ groups() ->
     [].
 
 all() ->
-      [rt1, rt5, rt10, rt50, rt75, rt100,
-      multirun_test].
+      [rt1, rt5, rt10, rt50, rt75, rt100, multirun_test, multicmd_err].
      %% {skip, test}.
 
 rt1(Config) -> 
@@ -114,9 +113,13 @@ multirun_tester(Number, {Con1, Con2, Con3, Con4, Con5}) ->
     end,
     io:format("Number ~w is starting the run_test with Connection ~w",[Number, Con]),
     run_test(Number, ?MULTIRUN_RUNS, Con).
-    
-    
 
+multicmd_err(_Config) ->
+    {ok, ConPId} = ezk:start_connection(),
+    M = ezk:new_multi(ConPId),
+    M2 = ezk:create(M, "/newnode", <<"nodedata">>),
+    M3 = ezk:delete(M2, "/does_not_exist"),
+    {error, [ok, no_dir]} = ezk:multi(M3).
 
 run_test(_Number, Cycles, ConPId) ->
     io:format("Start ~w with ~w cycles",[self(), Cycles]),
@@ -127,6 +130,11 @@ run_test(_Number, Cycles, ConPId) ->
     List2 = change_data(ConPId, List,[]),
     io:format("test data again  ~w with ~w cycles",[self(), Cycles]),
     ok    = test_data(ConPId, List2),    
+    io:format("test multi create+set  ~w with ~w cycles",[self(), Cycles]),
+    ok    = test_create_and_set(ConPId, List2),
+    io:format("test multi delete+set  ~w with ~w cycles",[self(), Cycles]),
+    ok    = test_delete_and_set(ConPId, List2),
+
 
 %% ------------ datawatches
     io:format("set datawatch ~w with ~w cycles",[self(), Cycles]),
@@ -262,4 +270,25 @@ sequenzed_create(ConPId, Path, CyclesLeft, List) ->
 
 datamaker(N) ->
     list_to_binary(lists:seq(1,N)).
-    
+
+test_create_and_set(_ConPId, []) ->
+    ok;
+test_create_and_set(ConPId, [{Path, Data} | Tail]) ->
+    M = ezk:new_multi(ConPId),
+    M2 = ezk:create(M, Path ++ "/child", Data),
+    M3 = ezk:set(M2, Path, <<>>),
+    {ok, _} = ezk:multi(M3),
+    {ok, {<<>>, _}} = ezk:get(ConPId, Path),
+    {ok, {Data, _}} = ezk:get(ConPId, Path ++ "/child"),
+    test_create_and_set(ConPId, Tail).
+
+test_delete_and_set(_ConPId, []) ->
+    ok;
+test_delete_and_set(ConPId, [{Path, Data} | Tail]) ->
+    M = ezk:new_multi(ConPId),
+    M2 = ezk:delete(M, Path ++ "/child"),
+    M3 = ezk:set(M2, Path, Data),
+    {ok, _} = ezk:multi(M3),
+    {ok, {Data, _I}} = ezk:get(ConPId, Path),
+    {error, no_dir} = ezk:get(ConPId, Path ++ "/child"),
+    test_delete_and_set(ConPId, Tail).

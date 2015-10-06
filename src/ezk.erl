@@ -44,12 +44,17 @@
 -export([add_monitors/2, get_connections/0]).
 -export([exists/2, exists/4]).
 -export([sync/2]).
+-export([new_multi/1, multi/1]).
 
--type ezk_err()          :: inval_acl | dir_exists | no_rights | no_dir |
-                            childs_or_forbidden.
+-type ezk_err()          :: ok | no_dir | no_rights | bad_version | childs_or_forbidden |
+                            dir_exists | not_empty | session_expired | invalid_callback |
+                            invalid_acl | auth_failed | closing | nothing | session_moved |
+                            not_read_only | ephemeral_on_local_session | no_watcher |
+                            rw_server_found | integer().
 -type ezk_path()         :: string().
 -type ezk_conpid()       :: pid().
 -type ezk_data()         :: binary().
+-type ezk_multireply()   :: ezk_path() | {}.
 -type ezk_ctype()        :: e | es | s | se.
 -type ezk_acl_perms()    :: [ezk_acl_perm()].
 -type ezk_acl_perm()     :: r | w | c | d | a.
@@ -102,6 +107,9 @@
                   {ok, {ezk_acls(), ezk_getdata()}} | {error, ezk_err()}.
 -spec sync/2   :: (ezk_conpid(), ezk_path()) ->
                   {ok, ezk_path()} | {error, ezk_err()}.
+-spec new_multi/1 :: (ezk_conpid()) -> {multi, ezk_conpid(), []}.
+-spec multi/1  :: ({multi, ezk_conpid(), [tuple()]}) ->
+                  {ok, [ezk_multireply()]} | {error, [ezk_err()]}.
 
 -spec start_connection/0 :: () -> {ok, ezk_conpid()} | {error, no_server_reached}.
 -spec start_connection/1 :: ([ezk_server()]) ->
@@ -135,6 +143,7 @@ help() ->
     io:format("| ezk:ls2/2        : ConPId,  Path                           |~n"),
     io:format("| ezk:ls2/4        : ConPId,  Path, WatchOwner, Watchmessage |~n"),
     io:format("| ezk:sync/2       : ConPId,  Path                           |~n"),
+    io:format("| ezk:multi/1      : MultiOp                                 |~n"),
     io:format("| ezk:info_get_iterations/1  : ConPId                        |~n"),
     io:format("| ezk:start_connection/0                                     |~n"),
     io:format("| ezk:start_connection/1     : Servers                       |~n"),
@@ -159,9 +168,12 @@ help() ->
     io:format("| Path = Scheme = Id = Reason = String                       |~n"),
     io:format("| Permission = r | w | c | d | a                             |~n"),
     io:format("| WatchOwner, ConPId = PId           WatchMessage = String   |~n"),
+    io:format("| MultiOp = {multi, ConPId, Ops}                             |~n"),
     io:format("| Data    = All Things              Typ = e | s | es         |~n"),
     io:format("| Server  = {IP, Port, Timeout(ms), Heartbeattime(ms)        |~n"),
     io:format("| Servers = [Server]                                         |~n"),
+    io:format("| Ops     = [Op]                                             |~n"),
+    io:format("| Op      = operation tuple                                  |~n"),
     io:format("|------------------------------------------------------------|~n").
 
 
@@ -288,6 +300,15 @@ ls2(ConnectionPId, Path, WatchOwner, WatchMessage) ->
 %% Sync the node.
 sync(ConnectionPId, Path) ->
     ezk_connection:sync(ConnectionPId, Path).
+
+%% Create a structure to commit multiple zookeeper operations synchronously.
+%% Returns a tuple that can be passed as ConnectionPId to create, delete, and set.
+new_multi(ConnectionPId) ->
+    {multi, ConnectionPId, []}.
+
+%% Commit multiple zookeeper operations synchronously.
+multi({multi, ConnectionPId, Ops}) ->
+    ezk_connection:multi(ConnectionPId, Ops).
 
 %% Returns the Actual Transaction Id of the Client.
 %% Reply = Iteration = Int.
