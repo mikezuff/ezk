@@ -43,6 +43,7 @@
 -export([start_connection/0, start_connection/1, end_connection/2]).
 -export([add_monitors/2, get_connections/0]).
 -export([exists/2, exists/4]).
+-export([sync/2]).
 
 -type ezk_err()          :: inval_acl | dir_exists | no_rights | no_dir |
                             childs_or_forbidden.
@@ -97,8 +98,10 @@
                   {ok, ezk_getdata()} | {error, ezk_err()}.
 -spec set_acl/3:: (ezk_conpid(), ezk_path(), ezk_acls()) ->
                   {ok, ezk_getdata()}.
--spec get_acl/2:: (ezk_conpid, ezk_path()) ->
-                  {ok, {ezk_acls(), ezk_getdata()}}.
+-spec get_acl/2:: (ezk_conpid(), ezk_path()) ->
+                  {ok, {ezk_acls(), ezk_getdata()}} | {error, ezk_err()}.
+-spec sync/2   :: (ezk_conpid(), ezk_path()) ->
+                  {ok, ezk_path()} | {error, ezk_err()}.
 
 -spec start_connection/0 :: () -> {ok, ezk_conpid()} | {error, no_server_reached}.
 -spec start_connection/1 :: ([ezk_server()]) ->
@@ -131,6 +134,7 @@ help() ->
     io:format("| ezk:ls/4         : ConPId,  Path, WatchOwner, Watchmessage |~n"),
     io:format("| ezk:ls2/2        : ConPId,  Path                           |~n"),
     io:format("| ezk:ls2/4        : ConPId,  Path, WatchOwner, Watchmessage |~n"),
+    io:format("| ezk:sync/2       : ConPId,  Path                           |~n"),
     io:format("| ezk:info_get_iterations/1  : ConPId                        |~n"),
     io:format("| ezk:start_connection/0                                     |~n"),
     io:format("| ezk:start_connection/1     : Servers                       |~n"),
@@ -280,6 +284,10 @@ n_ls2(ConnectionPId, Path, Receiver, Tag) ->
 %% Same Reaktion like at get with watch but Type = child
 ls2(ConnectionPId, Path, WatchOwner, WatchMessage) ->
     ezk_connection:ls2(ConnectionPId, Path, WatchOwner, WatchMessage).
+
+%% Sync the node.
+sync(ConnectionPId, Path) ->
+    ezk_connection:sync(ConnectionPId, Path).
 
 %% Returns the Actual Transaction Id of the Client.
 %% Reply = Iteration = Int.

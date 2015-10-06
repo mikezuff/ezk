@@ -55,6 +55,7 @@
 -export([n_create/5, n_create/6, n_create/7, n_delete/4, n_set/5, n_set_acl/5]).
 -export([  get/2,   get_acl/2,   ls2/2,   ls/2]).
 -export([n_get/4, n_get_acl/4, n_ls2/4, n_ls/4]).
+-export([sync/2]).
 %functions dealing with watches
 -export([ls/4, get/4, ls2/4]).
 %macros
@@ -246,6 +247,10 @@ n_ls2(ConnectionPId, Path, Receiver, Tag) when is_pid(ConnectionPId) ->
 ls2(ConnectionPId, Path, WatchOwner, WatchMessage) when is_pid(ConnectionPId) ->
     call_and_catch(ConnectionPId, {watchcommand, {ls2, ls2w,Path ,{child, WatchOwner,
                                                                     WatchMessage}}}).
+
+%% Sync the node.
+sync(ConnectionPId, Path) when is_pid(ConnectionPId) ->
+    call_and_catch(ConnectionPId, {command, {sync, Path}}).
 
 %% Returns the Actual Transaction Id of the Client.
 %% Reply = Iteration = Int.

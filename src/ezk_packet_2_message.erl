@@ -158,6 +158,13 @@ interpret_reply_data(8, _Path, Reply) ->
     ?LOG(4,"packet_2_message: Paths extracted."),
     ?LOG(4,"packet_2_message: Paths are: ~w",[List]),
     lists:map(fun(A) -> list_to_binary(A) end, List);
+
+%%% sync --> Reply = the sync'd node path
+interpret_reply_data(9, _Path, Reply) ->
+    {[RPath], Left} = get_n_paths(1, Reply),
+    ?LOG(4, "P2M: Got a sync reply for ~p", [RPath]),
+    {RPath, Left};
+
 %%% ls2 --> Reply = a list of the nodes children and the nodes parameters
 interpret_reply_data(12, _Path, Reply) ->
     {<<NumberOfAnswers:32>>, Data} = split_binary(Reply, 4),

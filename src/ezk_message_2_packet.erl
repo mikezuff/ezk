@@ -108,6 +108,11 @@ make_packet({lsw, Path}, Iteration) ->
     Load = <<(pack_it_l2b(Path))/binary, 1:8>>,
     Command = 8,
     wrap_packet({Command, Path, Load}, Iteration );
+%% sync
+make_packet({sync, Path}, Iteration) ->
+    Load = <<(pack_it_l2b(Path))/binary>>,
+    Command = 9,
+    wrap_packet({Command, Path, Load}, Iteration );
 %% ls2
 make_packet({ls2, Path}, Iteration) ->
     Load = <<(pack_it_l2b(Path))/binary, 0:8>>,
